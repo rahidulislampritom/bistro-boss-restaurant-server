@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const port = process.env.PORT || 5000
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // middleware 
 
@@ -74,7 +74,7 @@ async function run() {
         // jwt 
         app.post('/jwt', async (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '1hr' });
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: 60 * 60 });
             res.send({ token });
         })
 
@@ -149,6 +149,41 @@ async function run() {
             res.send(result);
         })
 
+        // this get is using for find a specific data by id from menu collection in (Routes.jsx and UpdateItem.jsx)
+        app.get('/menu/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await myMenuCollection.findOne(query);
+            res.send(result);
+
+        })
+
+        // this delete is using for delete foodCardData from menu collection in (ManageItem.jsx) 
+        app.delete('/menu/:id', verifyToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await myMenuCollection.deleteOne(query);
+            res.send(result);
+        })
+
+        // this patch is using for update foodCardData from menuCollection in (UpdateItem.jsx)
+        app.patch('/menu/:id', async (req, res) => {
+            const id = req.params.id;
+            const data = req.body;
+            const filter = { _id: new ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    name: data.name,
+                    recipe: data.recipe,
+                    image: data.image,
+                    category: data.category,
+                    price: data.price,
+                }
+            }
+            const result = await myMenuCollection.updateOne(filter, updatedDoc);
+            res.send(result);
+        })
+
         app.get('/reviews', async (req, res) => {
             const result = await reviewCollection.find().toArray();
             res.send(result)
@@ -174,6 +209,23 @@ async function run() {
             const result = await cardCollection.deleteOne(query);
             res.send(result);
         })
+
+        // payment intent (CheckoutForm.jsx)
+        app.post('/create-payment-intent', async (req, res) => {
+            const { price } = req.body;
+            const amount = parseInt(price * 100);
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            });
+
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+        })
+
+
 
     } finally {
         // Ensures that the client will close when you finish/error
